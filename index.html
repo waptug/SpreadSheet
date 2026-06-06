@@ -15,7 +15,20 @@
         <label class="sr-only" for="formulaBar">Formula bar</label>
         <input id="formulaBar" class="formula-bar" autocomplete="off" spellcheck="false">
         <div class="toolbar" aria-label="Spreadsheet tools">
-          <nav class="menu-bar" aria-label="Function menu">
+          <nav class="menu-bar" aria-label="Application and function menus">
+            <details class="menu">
+              <summary>File</summary>
+              <div class="menu-list file-menu-list" role="menu">
+                <button type="button" role="menuitem" id="newSheet">New Sheet</button>
+                <button type="button" role="menuitem" id="saveSheet">Save</button>
+                <button type="button" role="menuitem" id="saveSheetAs">Save As...</button>
+                <div class="menu-separator" aria-hidden="true"></div>
+                <label class="menu-field" for="savedSheetSelect">Saved Sheets</label>
+                <select id="savedSheetSelect" class="menu-select"></select>
+                <button type="button" role="menuitem" id="loadSheet">Load Selected</button>
+                <button type="button" role="menuitem" id="deleteSavedSheet" class="danger">Delete Selected</button>
+              </div>
+            </details>
             <details class="menu">
               <summary>Math</summary>
               <div class="menu-list" role="menu">
@@ -42,7 +55,6 @@
               </div>
             </details>
           </nav>
-          <button type="button" id="clearSheet" class="danger" title="Clear sheet">Clear</button>
         </div>
       </header>
 
@@ -51,6 +63,7 @@
       </section>
 
       <footer class="statusbar">
+        <span id="statusSheet">Unsaved sheet</span>
         <span id="statusCell">A1</span>
         <span id="statusValue"></span>
       </footer>

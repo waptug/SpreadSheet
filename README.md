@@ -10,6 +10,10 @@ python3 -m http.server 5173 --bind 127.0.0.1
 
 Then open `http://127.0.0.1:5173/` in a browser.
 
+## Saving Sheets
+
+The working sheet auto-saves in the browser. Use `File > Save` or `File > Save As...` to create a named saved sheet. Use `File > Load Selected` to restore a saved sheet, or `File > Delete Selected` to remove one.
+
 ## Formula Examples
 
 - `=A1+B1`

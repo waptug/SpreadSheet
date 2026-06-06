@@ -58,8 +58,15 @@ button:hover {
   background: #f8fafc;
 }
 
+button:disabled,
+select:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 button:focus-visible,
-input:focus-visible {
+input:focus-visible,
+select:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -198,6 +205,10 @@ button.danger {
   box-shadow: 0 14px 28px rgb(15 23 42 / 18%);
 }
 
+.file-menu-list {
+  min-width: 210px;
+}
+
 .menu-list button {
   display: flex;
   align-items: center;
@@ -219,6 +230,41 @@ button.danger {
 .menu-list button:focus-visible {
   background: var(--accent-soft);
   color: #134e4a;
+}
+
+.menu-list button.danger {
+  color: var(--danger);
+}
+
+.menu-list button.danger:hover,
+.menu-list button.danger:focus-visible {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.menu-separator {
+  height: 1px;
+  margin: 6px 2px;
+  background: var(--border);
+}
+
+.menu-field {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  padding: 4px 4px 2px;
+}
+
+.menu-select {
+  width: 100%;
+  height: 32px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+  margin-bottom: 4px;
+  padding: 0 8px;
 }
 
 .sheet-frame {
@@ -360,6 +406,11 @@ button.danger {
   border-top: 1px solid var(--border);
   background: var(--panel);
   color: var(--muted);
+}
+
+#statusSheet {
+  color: var(--accent);
+  font-weight: 800;
 }
 
 #statusCell {
