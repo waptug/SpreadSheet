@@ -33,6 +33,22 @@ document.addEventListener("pointerup", () => {
   isSelecting = false;
 });
 
+document.addEventListener("click", (event) => {
+  document.querySelectorAll(".menu[open]").forEach((menu) => {
+    if (!menu.contains(event.target)) {
+      menu.removeAttribute("open");
+    }
+  });
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    document.querySelectorAll(".menu[open]").forEach((menu) => {
+      menu.removeAttribute("open");
+    });
+  }
+});
+
 addressBox.addEventListener("keydown", (event) => {
   if (event.key !== "Enter") {
     return;
@@ -66,7 +82,22 @@ formulaBar.addEventListener("keydown", (event) => {
 
 document.querySelectorAll("[data-insert-function]").forEach((button) => {
   button.addEventListener("click", () => {
-    insertFunction(button.dataset.insertFunction);
+    insertFunction(button.dataset.insertFunction, button.dataset.functionTemplate);
+    button.closest(".menu")?.removeAttribute("open");
+  });
+});
+
+document.querySelectorAll(".menu").forEach((menu) => {
+  menu.addEventListener("toggle", () => {
+    if (!menu.open) {
+      return;
+    }
+
+    document.querySelectorAll(".menu[open]").forEach((openMenu) => {
+      if (openMenu !== menu) {
+        openMenu.removeAttribute("open");
+      }
+    });
   });
 });
 
@@ -232,12 +263,9 @@ function selectRange(start, end, options = {}) {
   }
 }
 
-function insertFunction(name) {
-  const selectedCells = getSelectedRangeCells();
-  const isSingleCell = selectedCells.length === 1;
-  const label = isSingleCell ? "" : currentSelectionLabel();
-  const formula = `=${name}(${label})`;
-  const destination = isSingleCell ? selectedCell : suggestedFormulaDestination();
+function insertFunction(name, template = `${name}()`) {
+  const formula = `=${fillFunctionTemplate(template)}`;
+  const destination = suggestedFormulaDestination();
 
   selectedCell = destination;
   selectionStart = destination;
@@ -247,6 +275,10 @@ function insertFunction(name) {
   formulaBar.value = formula;
   render();
   getCellInput(destination)?.focus();
+}
+
+function fillFunctionTemplate(template) {
+  return template.replaceAll("{range}", currentSelectionLabel()).replaceAll("{cell}", selectedCell);
 }
 
 function currentSelectionLabel() {

@@ -250,6 +250,8 @@ function evaluateAst(node, context) {
   switch (node.type) {
     case "number":
       return numberValue(node.value);
+    case "string":
+      return textValue(node.value);
     case "cell":
       registerDependency(context, node.id);
       return context.evaluateCell(node.id, context.stack);
@@ -288,6 +290,20 @@ function evaluateUnary(node, context) {
 }
 
 function evaluateBinary(node, context) {
+  if (node.operator === "&") {
+    const left = toText(evaluateAst(node.left, context));
+    if (isError(left)) {
+      return left;
+    }
+
+    const right = toText(evaluateAst(node.right, context));
+    if (isError(right)) {
+      return right;
+    }
+
+    return textValue(left.value + right.value);
+  }
+
   const left = toNumber(evaluateAst(node.left, context));
   if (isError(left)) {
     return left;
@@ -350,7 +366,113 @@ const FUNCTIONS = new Map([
       return values.length === 0 ? numberValue(0) : numberValue(Math.max(...values));
     }
   ],
-  ["COUNT", (args) => numberValue(numericArgs(args).length)]
+  ["COUNT", (args) => numberValue(numericArgs(args).length)],
+  ["CONCAT", (args) => textValue(textArgs(args).join(""))],
+  [
+    "LEN",
+    (args) => {
+      assertArgCount(args, 1, 1);
+      return numberValue([...textArg(args, 0)].length);
+    }
+  ],
+  [
+    "LEFT",
+    (args) => {
+      assertArgCount(args, 1, 2);
+      const text = [...textArg(args, 0)];
+      const count = integerArg(args, 1, 1);
+      if (count < 0) {
+        throw new FormulaException(ERRORS.VALUE);
+      }
+
+      return textValue(text.slice(0, count).join(""));
+    }
+  ],
+  [
+    "RIGHT",
+    (args) => {
+      assertArgCount(args, 1, 2);
+      const text = [...textArg(args, 0)];
+      const count = integerArg(args, 1, 1);
+      if (count < 0) {
+        throw new FormulaException(ERRORS.VALUE);
+      }
+
+      return textValue(count === 0 ? "" : text.slice(-count).join(""));
+    }
+  ],
+  [
+    "MID",
+    (args) => {
+      assertArgCount(args, 3, 3);
+      const text = [...textArg(args, 0)];
+      const start = integerArg(args, 1);
+      const count = integerArg(args, 2);
+      if (start < 1 || count < 0) {
+        throw new FormulaException(ERRORS.VALUE);
+      }
+
+      return textValue(text.slice(start - 1, start - 1 + count).join(""));
+    }
+  ],
+  [
+    "UPPER",
+    (args) => {
+      assertArgCount(args, 1, 1);
+      return textValue(textArg(args, 0).toUpperCase());
+    }
+  ],
+  [
+    "LOWER",
+    (args) => {
+      assertArgCount(args, 1, 1);
+      return textValue(textArg(args, 0).toLowerCase());
+    }
+  ],
+  [
+    "TRIM",
+    (args) => {
+      assertArgCount(args, 1, 1);
+      return textValue(textArg(args, 0).trim().replace(/\s+/g, " "));
+    }
+  ],
+  [
+    "FIND",
+    (args) => {
+      assertArgCount(args, 2, 3);
+      const search = textArg(args, 0);
+      const text = textArg(args, 1);
+      const start = integerArg(args, 2, 1);
+
+      if (start < 1 || start > text.length + 1) {
+        throw new FormulaException(ERRORS.VALUE);
+      }
+
+      const index = text.indexOf(search, start - 1);
+      if (index === -1) {
+        throw new FormulaException(ERRORS.VALUE);
+      }
+
+      return numberValue(index + 1);
+    }
+  ],
+  [
+    "REPLACE",
+    (args) => {
+      assertArgCount(args, 4, 4);
+      const text = [...textArg(args, 0)];
+      const start = integerArg(args, 1);
+      const count = integerArg(args, 2);
+      const replacement = textArg(args, 3);
+
+      if (start < 1 || count < 0) {
+        throw new FormulaException(ERRORS.VALUE);
+      }
+
+      const index = Math.min(start - 1, text.length);
+      return textValue([...text.slice(0, index), replacement, ...text.slice(index + count)].join(""));
+    }
+  ]
 ]);
 
 function numericArgs(args) {
@@ -367,6 +489,63 @@ function numericArgs(args) {
   }
 
   return values;
+}
+
+function textArgs(args) {
+  const values = [];
+
+  for (const value of flattenValues(args)) {
+    const text = toText(value);
+    if (isError(text)) {
+      throw new FormulaException(text.code);
+    }
+
+    values.push(text.value);
+  }
+
+  return values;
+}
+
+function textArg(args, index) {
+  const text = toText(scalarArg(args, index));
+  if (isError(text)) {
+    throw new FormulaException(text.code);
+  }
+
+  return text.value;
+}
+
+function integerArg(args, index, fallback) {
+  if (index >= args.length && fallback !== undefined) {
+    return fallback;
+  }
+
+  const number = toNumber(scalarArg(args, index));
+  if (isError(number)) {
+    throw new FormulaException(number.code);
+  }
+
+  return Math.trunc(number.value);
+}
+
+function scalarArg(args, index) {
+  const value = args[index] ?? blankValue();
+
+  if (value.type === "range") {
+    throw new FormulaException(ERRORS.VALUE);
+  }
+
+  if (isError(value)) {
+    throw new FormulaException(value.code);
+  }
+
+  return value;
+}
+
+function assertArgCount(args, min, max = min) {
+  if (args.length < min || args.length > max) {
+    throw new FormulaException(ERRORS.VALUE);
+  }
 }
 
 function flattenValues(values) {
@@ -406,6 +585,26 @@ function toNumber(value) {
   }
 
   return value;
+}
+
+function toText(value) {
+  if (isError(value)) {
+    return value;
+  }
+
+  if (value.type === "blank") {
+    return textValue("");
+  }
+
+  if (value.type === "number") {
+    return textValue(formatValue(value));
+  }
+
+  if (value.type === "text") {
+    return value;
+  }
+
+  return errorValue(ERRORS.VALUE);
 }
 
 function blankValue() {
@@ -503,6 +702,37 @@ function tokenize(input) {
       continue;
     }
 
+    if (character === "\"") {
+      let value = "";
+      index += 1;
+
+      while (index < input.length) {
+        const next = input[index];
+
+        if (next === "\"") {
+          if (input[index + 1] === "\"") {
+            value += "\"";
+            index += 2;
+            continue;
+          }
+
+          index += 1;
+          tokens.push({ type: "string", value });
+          value = null;
+          break;
+        }
+
+        value += next;
+        index += 1;
+      }
+
+      if (value !== null) {
+        throw new FormulaException(ERRORS.VALUE);
+      }
+
+      continue;
+    }
+
     if (/[A-Za-z_]/.test(character)) {
       const match = input.slice(index).match(/^[A-Za-z_][A-Za-z0-9_]*/);
       const value = match[0].toUpperCase();
@@ -514,7 +744,7 @@ function tokenize(input) {
       continue;
     }
 
-    if ("+-*/^(),:".includes(character)) {
+    if ("+-*/^&(),:".includes(character)) {
       tokens.push({ type: character, value: character });
       index += 1;
       continue;
@@ -534,9 +764,21 @@ class Parser {
   }
 
   parse() {
-    const expression = this.parseAdditive();
+    const expression = this.parseConcatenation();
     this.expect("eof");
     return expression;
+  }
+
+  parseConcatenation() {
+    let node = this.parseAdditive();
+
+    while (this.match("&")) {
+      const operator = this.previous().value;
+      const right = this.parseAdditive();
+      node = { type: "binary", operator, left: node, right };
+    }
+
+    return node;
   }
 
   parseAdditive() {
@@ -589,6 +831,10 @@ class Parser {
       return { type: "number", value: this.previous().value };
     }
 
+    if (this.match("string")) {
+      return { type: "string", value: this.previous().value };
+    }
+
     if (this.match("cell")) {
       const start = normalizeCellId(this.previous().value);
 
@@ -607,7 +853,7 @@ class Parser {
 
       if (!this.check(")")) {
         do {
-          args.push(this.parseAdditive());
+          args.push(this.parseConcatenation());
         } while (this.match(","));
       }
 
@@ -616,7 +862,7 @@ class Parser {
     }
 
     if (this.match("(")) {
-      const expression = this.parseAdditive();
+      const expression = this.parseConcatenation();
       this.expect(")");
       return expression;
     }

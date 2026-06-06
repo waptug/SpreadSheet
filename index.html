@@ -14,12 +14,34 @@
         <input id="addressBox" class="address-box" value="A1" autocomplete="off" spellcheck="false">
         <label class="sr-only" for="formulaBar">Formula bar</label>
         <input id="formulaBar" class="formula-bar" autocomplete="off" spellcheck="false">
-        <div class="toolbar" aria-label="Formula tools">
-          <button type="button" data-insert-function="SUM" title="Insert SUM">SUM</button>
-          <button type="button" data-insert-function="AVG" title="Insert AVG">AVG</button>
-          <button type="button" data-insert-function="MIN" title="Insert MIN">MIN</button>
-          <button type="button" data-insert-function="MAX" title="Insert MAX">MAX</button>
-          <button type="button" data-insert-function="COUNT" title="Insert COUNT">COUNT</button>
+        <div class="toolbar" aria-label="Spreadsheet tools">
+          <nav class="menu-bar" aria-label="Function menu">
+            <details class="menu">
+              <summary>Math</summary>
+              <div class="menu-list" role="menu">
+                <button type="button" role="menuitem" data-insert-function="SUM" data-function-template="SUM({range})">SUM</button>
+                <button type="button" role="menuitem" data-insert-function="AVG" data-function-template="AVG({range})">AVG</button>
+                <button type="button" role="menuitem" data-insert-function="MIN" data-function-template="MIN({range})">MIN</button>
+                <button type="button" role="menuitem" data-insert-function="MAX" data-function-template="MAX({range})">MAX</button>
+                <button type="button" role="menuitem" data-insert-function="COUNT" data-function-template="COUNT({range})">COUNT</button>
+              </div>
+            </details>
+            <details class="menu">
+              <summary>Text</summary>
+              <div class="menu-list" role="menu">
+                <button type="button" role="menuitem" data-insert-function="CONCAT" data-function-template="CONCAT({range})">CONCAT</button>
+                <button type="button" role="menuitem" data-insert-function="LEN" data-function-template="LEN({cell})">LEN</button>
+                <button type="button" role="menuitem" data-insert-function="LEFT" data-function-template="LEFT({cell}, 1)">LEFT</button>
+                <button type="button" role="menuitem" data-insert-function="RIGHT" data-function-template="RIGHT({cell}, 1)">RIGHT</button>
+                <button type="button" role="menuitem" data-insert-function="MID" data-function-template="MID({cell}, 1, 1)">MID</button>
+                <button type="button" role="menuitem" data-insert-function="UPPER" data-function-template="UPPER({cell})">UPPER</button>
+                <button type="button" role="menuitem" data-insert-function="LOWER" data-function-template="LOWER({cell})">LOWER</button>
+                <button type="button" role="menuitem" data-insert-function="TRIM" data-function-template="TRIM({cell})">TRIM</button>
+                <button type="button" role="menuitem" data-insert-function="FIND" data-function-template="FIND(&quot;text&quot;, {cell})">FIND</button>
+                <button type="button" role="menuitem" data-insert-function="REPLACE" data-function-template="REPLACE({cell}, 1, 0, &quot;text&quot;)">REPLACE</button>
+              </div>
+            </details>
+          </nav>
           <button type="button" id="clearSheet" class="danger" title="Clear sheet">Clear</button>
         </div>
       </header>

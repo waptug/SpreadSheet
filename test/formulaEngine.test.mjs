@@ -76,3 +76,62 @@ test("propagates calculation errors", () => {
   assert.equal(result.cells.C1.display, ERRORS.DIV0);
   assert.equal(result.cells.D1.display, ERRORS.DIV0);
 });
+
+test("evaluates quoted string literals and text concatenation", () => {
+  const engine = new FormulaEngine({
+    A1: "Hello",
+    B1: "World",
+    C1: "=A1&\" \"&B1",
+    D1: "=CONCAT(A1, \" \", B1, \"!\")",
+    E1: "=CONCAT(A1:B1)"
+  });
+
+  const result = engine.evaluateCells(["C1", "D1", "E1"]);
+
+  assert.equal(result.cells.C1.display, "Hello World");
+  assert.equal(result.cells.D1.display, "Hello World!");
+  assert.equal(result.cells.E1.display, "HelloWorld");
+});
+
+test("evaluates common text functions against cell references", () => {
+  const engine = new FormulaEngine({
+    A1: "  hello World  ",
+    B1: "=LEN(A1)",
+    C1: "=TRIM(A1)",
+    D1: "=UPPER(C1)",
+    E1: "=LOWER(C1)",
+    F1: "=LEFT(C1, 5)",
+    G1: "=RIGHT(C1, 5)",
+    H1: "=MID(C1, 7, 5)",
+    I1: "=FIND(\"World\", C1)",
+    J1: "=REPLACE(C1, 7, 5, \"There\")"
+  });
+
+  const result = engine.evaluateCells(["B1", "C1", "D1", "E1", "F1", "G1", "H1", "I1", "J1"]);
+
+  assert.equal(result.cells.B1.display, "15");
+  assert.equal(result.cells.C1.display, "hello World");
+  assert.equal(result.cells.D1.display, "HELLO WORLD");
+  assert.equal(result.cells.E1.display, "hello world");
+  assert.equal(result.cells.F1.display, "hello");
+  assert.equal(result.cells.G1.display, "World");
+  assert.equal(result.cells.H1.display, "World");
+  assert.equal(result.cells.I1.display, "7");
+  assert.equal(result.cells.J1.display, "hello There");
+});
+
+test("returns value errors for invalid text function input", () => {
+  const engine = new FormulaEngine({
+    A1: "=FIND(\"missing\", \"text\")",
+    B1: "=LEFT(\"text\", -1)",
+    C1: "=MID(\"text\", 0, 1)",
+    D1: "=LEN(A1:B1)"
+  });
+
+  const result = engine.evaluateCells(["A1", "B1", "C1", "D1"]);
+
+  assert.equal(result.cells.A1.display, ERRORS.VALUE);
+  assert.equal(result.cells.B1.display, ERRORS.VALUE);
+  assert.equal(result.cells.C1.display, ERRORS.VALUE);
+  assert.equal(result.cells.D1.display, ERRORS.VALUE);
+});
