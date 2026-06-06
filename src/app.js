@@ -22,6 +22,9 @@ const statusValue = document.querySelector("#statusValue");
 const newSheet = document.querySelector("#newSheet");
 const saveSheet = document.querySelector("#saveSheet");
 const saveSheetAs = document.querySelector("#saveSheetAs");
+const saveSheetFile = document.querySelector("#saveSheetFile");
+const openSheetFile = document.querySelector("#openSheetFile");
+const openSheetFileInput = document.querySelector("#openSheetFileInput");
 const savedSheetSelect = document.querySelector("#savedSheetSelect");
 const loadSheet = document.querySelector("#loadSheet");
 const deleteSavedSheet = document.querySelector("#deleteSavedSheet");
@@ -143,6 +146,26 @@ saveSheetAs.addEventListener("click", () => {
 
   saveNamedSheet(targetName, { confirmOverwrite: true });
   closeMenus();
+});
+
+saveSheetFile.addEventListener("click", async () => {
+  await saveSheetToLocalFile();
+  closeMenus();
+});
+
+openSheetFile.addEventListener("click", async () => {
+  await openSheetFromLocalFile();
+  closeMenus();
+});
+
+openSheetFileInput.addEventListener("change", async () => {
+  const file = openSheetFileInput.files?.[0];
+  if (!file) {
+    return;
+  }
+
+  await loadSheetFile(file);
+  openSheetFileInput.value = "";
 });
 
 loadSheet.addEventListener("click", () => {
@@ -422,8 +445,7 @@ function saveCells() {
 }
 
 function loadCurrentSheetName() {
-  const name = window.localStorage.getItem(CURRENT_SHEET_NAME_KEY) ?? "";
-  return loadSavedSheets()[name] ? name : "";
+  return normalizeSheetName(window.localStorage.getItem(CURRENT_SHEET_NAME_KEY) ?? "");
 }
 
 function loadSavedSheets() {
@@ -492,6 +514,141 @@ function saveNamedSheet(name, options = {}) {
   refreshSavedSheetSelect();
   render();
   return true;
+}
+
+async function saveSheetToLocalFile() {
+  const payload = createSheetFilePayload();
+  const fileName = fileNameFromSheetName(payload.name);
+  const content = `${JSON.stringify(payload, null, 2)}\n`;
+
+  if ("showSaveFilePicker" in window) {
+    try {
+      const fileHandle = await window.showSaveFilePicker({
+        suggestedName: fileName,
+        types: [
+          {
+            description: "Spreadsheet JSON",
+            accept: {
+              "application/json": [".json", ".spreadsheet"]
+            }
+          }
+        ]
+      });
+      const writable = await fileHandle.createWritable();
+      await writable.write(content);
+      await writable.close();
+      return true;
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        return false;
+      }
+
+      window.alert("The browser could not write directly to that file. A download will be created instead.");
+    }
+  }
+
+  downloadTextFile(content, fileName);
+  return true;
+}
+
+async function openSheetFromLocalFile() {
+  if ("showOpenFilePicker" in window) {
+    try {
+      const [fileHandle] = await window.showOpenFilePicker({
+        multiple: false,
+        types: [
+          {
+            description: "Spreadsheet JSON",
+            accept: {
+              "application/json": [".json", ".spreadsheet"]
+            }
+          }
+        ]
+      });
+      const file = await fileHandle.getFile();
+      return loadSheetFile(file);
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        return false;
+      }
+
+      window.alert("The browser could not open that file directly. Use the file picker fallback instead.");
+    }
+  }
+
+  openSheetFileInput.value = "";
+  openSheetFileInput.click();
+  return true;
+}
+
+async function loadSheetFile(file) {
+  try {
+    return loadSheetFileText(await file.text(), file.name);
+  } catch {
+    window.alert("The selected file could not be read.");
+    return false;
+  }
+}
+
+function loadSheetFileText(text, fileName) {
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    window.alert("The selected file is not valid JSON.");
+    return false;
+  }
+
+  const sheetFile = parseSheetFilePayload(parsed, fileName);
+  if (!sheetFile) {
+    window.alert("The selected file does not contain a valid spreadsheet.");
+    return false;
+  }
+
+  if (!window.confirm(`Open "${sheetFile.name}" and replace the current sheet?`)) {
+    return false;
+  }
+
+  engine.setCells(sheetFile.cells);
+  currentSheetName = sheetFile.name;
+  window.localStorage.setItem(CURRENT_SHEET_NAME_KEY, sheetFile.name);
+  saveCells();
+  resetSelection();
+  refreshSavedSheetSelect();
+  render();
+  return true;
+}
+
+function createSheetFilePayload() {
+  return {
+    app: "spreadsheet",
+    version: 1,
+    name: currentSheetName || "Untitled Sheet",
+    rows: ROWS,
+    columns: COLS,
+    savedAt: new Date().toISOString(),
+    cells: serializeCells()
+  };
+}
+
+function parseSheetFilePayload(payload, fileName) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+
+  const hasCellsObject =
+    payload.cells && typeof payload.cells === "object" && !Array.isArray(payload.cells);
+  const rawCells = hasCellsObject ? payload.cells : payload;
+  const cells = sanitizeCells(rawCells);
+
+  if (!hasCellsObject && Object.keys(cells).length === 0) {
+    return null;
+  }
+
+  return {
+    name: normalizeSheetName(payload.name) || sheetNameFromFileName(fileName) || "Imported Sheet",
+    cells
+  };
 }
 
 function loadNamedSheet(name) {
@@ -609,6 +766,34 @@ function suggestedSheetName() {
   }
 
   return name;
+}
+
+function fileNameFromSheetName(name) {
+  const safeName = normalizeSheetName(name)
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "-")
+    .replace(/^\.+|\.+$/g, "")
+    .trim();
+  return `${safeName || "spreadsheet"}.spreadsheet.json`;
+}
+
+function sheetNameFromFileName(fileName) {
+  return normalizeSheetName(
+    String(fileName ?? "")
+      .replace(/\.spreadsheet\.json$/i, "")
+      .replace(/\.json$/i, "")
+      .replace(/\.spreadsheet$/i, "")
+  );
+}
+
+function downloadTextFile(content, fileName) {
+  const url = URL.createObjectURL(new Blob([content], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function resetSelection() {

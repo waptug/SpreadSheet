@@ -14,6 +14,8 @@ Then open `http://127.0.0.1:5173/` in a browser.
 
 The working sheet auto-saves in the browser. Use `File > Save` or `File > Save As...` to create a named saved sheet. Use `File > Load Selected` to restore a saved sheet, or `File > Delete Selected` to remove one.
 
+Use `File > Save to File...` to write the current sheet to a local `.spreadsheet.json` file. Use `File > Open File...` to load one back into the grid. Browsers with the File System Access API can choose a local file location directly; other browsers fall back to download and upload prompts.
+
 ## Formula Examples
 
 - `=A1+B1`

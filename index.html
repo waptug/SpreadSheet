@@ -22,6 +22,8 @@
                 <button type="button" role="menuitem" id="newSheet">New Sheet</button>
                 <button type="button" role="menuitem" id="saveSheet">Save</button>
                 <button type="button" role="menuitem" id="saveSheetAs">Save As...</button>
+                <button type="button" role="menuitem" id="saveSheetFile">Save to File...</button>
+                <button type="button" role="menuitem" id="openSheetFile">Open File...</button>
                 <div class="menu-separator" aria-hidden="true"></div>
                 <label class="menu-field" for="savedSheetSelect">Saved Sheets</label>
                 <select id="savedSheetSelect" class="menu-select"></select>
@@ -68,6 +70,7 @@
         <span id="statusValue"></span>
       </footer>
     </main>
+    <input id="openSheetFileInput" class="sr-only" type="file" accept="application/json,.json,.spreadsheet">
     <script type="module" src="./src/app.js"></script>
   </body>
 </html>
