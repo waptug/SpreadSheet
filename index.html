@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Spreadsheet</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand">Spreadsheet</div>
+        <label class="sr-only" for="addressBox">Cell address</label>
+        <input id="addressBox" class="address-box" value="A1" autocomplete="off" spellcheck="false">
+        <label class="sr-only" for="formulaBar">Formula bar</label>
+        <input id="formulaBar" class="formula-bar" autocomplete="off" spellcheck="false">
+        <div class="toolbar" aria-label="Formula tools">
+          <button type="button" data-insert-function="SUM" title="Insert SUM">SUM</button>
+          <button type="button" data-insert-function="AVG" title="Insert AVG">AVG</button>
+          <button type="button" data-insert-function="MIN" title="Insert MIN">MIN</button>
+          <button type="button" data-insert-function="MAX" title="Insert MAX">MAX</button>
+          <button type="button" data-insert-function="COUNT" title="Insert COUNT">COUNT</button>
+          <button type="button" id="clearSheet" class="danger" title="Clear sheet">Clear</button>
+        </div>
+      </header>
+
+      <section class="sheet-frame" aria-label="Spreadsheet grid">
+        <table id="sheet" class="sheet"></table>
+      </section>
+
+      <footer class="statusbar">
+        <span id="statusCell">A1</span>
+        <span id="statusValue"></span>
+      </footer>
+    </main>
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>
