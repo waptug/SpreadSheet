@@ -1,10 +1,59 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ERRORS, FormulaEngine, cellId, expandRange } from "../src/formulaEngine.js";
+import {
+  ERRORS,
+  FormulaEngine,
+  cellId,
+  expandRange,
+  shiftFormulaReferences,
+  updateFormulaReferencesForStructureChange
+} from "../src/formulaEngine.js";
 
 test("supports the 256 by 256 sheet boundary", () => {
   assert.equal(cellId(255, 255), "IV256");
   assert.equal(expandRange("A1", "IV256").length, 65536);
+});
+
+test("shifts formula references when copied to a new location", () => {
+  assert.equal(
+    shiftFormulaReferences('=SUM(A1:B2)&" A1 literal "&C3', 2, 1, { maxRows: 256, maxCols: 256 }),
+    '=SUM(B3:C4)&" A1 literal "&D5'
+  );
+});
+
+test("updates formula references for inserted and deleted sheet structure", () => {
+  assert.equal(
+    updateFormulaReferencesForStructureChange("=SUM(A1:A10)+B5+C12", {
+      type: "delete",
+      axis: "row",
+      index: 4,
+      count: 1,
+      maxRows: 256,
+      maxCols: 256
+    }),
+    "=SUM(A1:A9)+#REF!+C11"
+  );
+
+  assert.equal(
+    updateFormulaReferencesForStructureChange("=A1+SUM(B1:C1)+IV1", {
+      type: "insert",
+      axis: "col",
+      index: 1,
+      count: 1,
+      maxRows: 256,
+      maxCols: 256
+    }),
+    "=A1+SUM(C1:D1)+#REF!"
+  );
+});
+
+test("evaluates generated reference errors", () => {
+  const engine = new FormulaEngine({
+    A1: "=#REF!+1"
+  });
+
+  const result = engine.evaluateCells(["A1"]);
+  assert.equal(result.cells.A1.display, ERRORS.REF);
 });
 
 test("recalculates dependent formulas when a referenced cell changes", () => {

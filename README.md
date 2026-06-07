@@ -16,6 +16,10 @@ The working sheet auto-saves in the browser. Use `File > Save` or `File > Save A
 
 Use `File > Save to File...` to write the current sheet to a local `.spreadsheet.json` file. Use `File > Open File...` to load one back into the grid. Browsers with the File System Access API can choose a local file location directly; other browsers fall back to download and upload prompts.
 
+## Editing Sheets
+
+Use the `Edit` menu to copy and paste cells, insert rows above or below the current selection, insert columns left or right, and delete selected rows or columns. Formulas are adjusted when cells move, and copied formulas are shifted relative to their pasted location.
+
 ## Formula Examples
 
 - `=A1+B1`

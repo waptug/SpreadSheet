@@ -4,7 +4,9 @@ import {
   compareCellIds,
   expandRange,
   parseCellId,
-  rangeLabel
+  rangeLabel,
+  shiftFormulaReferences,
+  updateFormulaReferencesForStructureChange
 } from "./formulaEngine.js";
 
 const ROWS = 256;
@@ -28,6 +30,14 @@ const openSheetFileInput = document.querySelector("#openSheetFileInput");
 const savedSheetSelect = document.querySelector("#savedSheetSelect");
 const loadSheet = document.querySelector("#loadSheet");
 const deleteSavedSheet = document.querySelector("#deleteSavedSheet");
+const copyCells = document.querySelector("#copyCells");
+const pasteCells = document.querySelector("#pasteCells");
+const insertRowsAbove = document.querySelector("#insertRowsAbove");
+const insertRowsBelow = document.querySelector("#insertRowsBelow");
+const deleteRows = document.querySelector("#deleteRows");
+const insertColumnsLeft = document.querySelector("#insertColumnsLeft");
+const insertColumnsRight = document.querySelector("#insertColumnsRight");
+const deleteColumns = document.querySelector("#deleteColumns");
 
 const engine = new FormulaEngine(loadCells());
 const cellInputs = new Map();
@@ -43,6 +53,7 @@ let lastPaintedCellIds = new Set();
 let lastRawCellIds = new Set();
 let lastActiveColumnHeaderIndexes = new Set();
 let lastActiveRowHeaderIndexes = new Set();
+let copiedCells = null;
 
 buildGrid();
 refreshSavedSheetSelect();
@@ -65,6 +76,16 @@ document.addEventListener("keydown", (event) => {
     document.querySelectorAll(".menu[open]").forEach((menu) => {
       menu.removeAttribute("open");
     });
+  }
+
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c" && shouldUseGridClipboard(document.activeElement)) {
+    event.preventDefault();
+    copySelectedCells();
+  }
+
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v" && shouldUseGridClipboard(document.activeElement)) {
+    event.preventDefault();
+    pasteCopiedCells();
   }
 });
 
@@ -182,6 +203,46 @@ deleteSavedSheet.addEventListener("click", () => {
   deleteNamedSheet(savedSheetSelect.value);
 });
 
+copyCells.addEventListener("click", () => {
+  copySelectedCells();
+  closeMenus();
+});
+
+pasteCells.addEventListener("click", () => {
+  pasteCopiedCells();
+  closeMenus();
+});
+
+insertRowsAbove.addEventListener("click", () => {
+  insertRows("above");
+  closeMenus();
+});
+
+insertRowsBelow.addEventListener("click", () => {
+  insertRows("below");
+  closeMenus();
+});
+
+deleteRows.addEventListener("click", () => {
+  deleteSelectedRows();
+  closeMenus();
+});
+
+insertColumnsLeft.addEventListener("click", () => {
+  insertColumns("left");
+  closeMenus();
+});
+
+insertColumnsRight.addEventListener("click", () => {
+  insertColumns("right");
+  closeMenus();
+});
+
+deleteColumns.addEventListener("click", () => {
+  deleteSelectedColumns();
+  closeMenus();
+});
+
 function buildGrid() {
   cellInputs.clear();
   columnHeaderButtons.length = 0;
@@ -258,6 +319,179 @@ function buildGrid() {
   }
 
   sheet.replaceChildren(thead, tbody);
+}
+
+function copySelectedCells() {
+  const range = selectedRangeBounds();
+  const values = [];
+
+  for (let row = range.firstRow; row <= range.lastRow; row += 1) {
+    for (let col = range.firstCol; col <= range.lastCol; col += 1) {
+      values.push({
+        rowOffset: row - range.firstRow,
+        colOffset: col - range.firstCol,
+        raw: engine.getRaw(cellId(row, col))
+      });
+    }
+  }
+
+  copiedCells = {
+    sourceFirstRow: range.firstRow,
+    sourceFirstCol: range.firstCol,
+    rowCount: range.lastRow - range.firstRow + 1,
+    colCount: range.lastCol - range.firstCol + 1,
+    values
+  };
+  syncFileMenuState();
+}
+
+function pasteCopiedCells() {
+  if (!copiedCells) {
+    return false;
+  }
+
+  const destination = parseCellId(selectedCell);
+  let lastRow = destination.row;
+  let lastCol = destination.col;
+
+  for (const value of copiedCells.values) {
+    const sourceRow = copiedCells.sourceFirstRow + value.rowOffset;
+    const sourceCol = copiedCells.sourceFirstCol + value.colOffset;
+    const destinationRow = destination.row + value.rowOffset;
+    const destinationCol = destination.col + value.colOffset;
+
+    if (!isVisiblePosition(destinationRow, destinationCol)) {
+      continue;
+    }
+
+    const destinationId = cellId(destinationRow, destinationCol);
+    const raw = value.raw.trim().startsWith("=")
+      ? shiftFormulaReferences(value.raw, destinationRow - sourceRow, destinationCol - sourceCol, {
+          maxRows: ROWS,
+          maxCols: COLS
+        })
+      : value.raw;
+
+    engine.setCell(destinationId, raw);
+    lastRow = Math.max(lastRow, destinationRow);
+    lastCol = Math.max(lastCol, destinationCol);
+  }
+
+  saveCells();
+  selectionStart = selectedCell;
+  selectionEnd = cellId(lastRow, lastCol);
+  render();
+  return true;
+}
+
+function insertRows(position) {
+  const range = selectedRangeBounds();
+  const requestedCount = range.lastRow - range.firstRow + 1;
+  const index = position === "below" ? range.lastRow + 1 : range.firstRow;
+  const count = Math.min(requestedCount, ROWS - index);
+
+  if (count <= 0) {
+    window.alert("There is no room to insert more rows.");
+    return false;
+  }
+
+  applyStructureChange({ type: "insert", axis: "row", index, count, maxRows: ROWS, maxCols: COLS });
+  selectRange(cellId(index, 0), cellId(index + count - 1, COLS - 1));
+  return true;
+}
+
+function deleteSelectedRows() {
+  const range = selectedRangeBounds();
+  const count = range.lastRow - range.firstRow + 1;
+
+  if (!window.confirm(`Delete ${count} selected row${count === 1 ? "" : "s"}?`)) {
+    return false;
+  }
+
+  applyStructureChange({ type: "delete", axis: "row", index: range.firstRow, count, maxRows: ROWS, maxCols: COLS });
+  const row = Math.min(range.firstRow, ROWS - 1);
+  selectCell(cellId(row, range.firstCol), { focus: true });
+  return true;
+}
+
+function insertColumns(position) {
+  const range = selectedRangeBounds();
+  const requestedCount = range.lastCol - range.firstCol + 1;
+  const index = position === "right" ? range.lastCol + 1 : range.firstCol;
+  const count = Math.min(requestedCount, COLS - index);
+
+  if (count <= 0) {
+    window.alert("There is no room to insert more columns.");
+    return false;
+  }
+
+  applyStructureChange({ type: "insert", axis: "col", index, count, maxRows: ROWS, maxCols: COLS });
+  selectRange(cellId(0, index), cellId(ROWS - 1, index + count - 1));
+  return true;
+}
+
+function deleteSelectedColumns() {
+  const range = selectedRangeBounds();
+  const count = range.lastCol - range.firstCol + 1;
+
+  if (!window.confirm(`Delete ${count} selected column${count === 1 ? "" : "s"}?`)) {
+    return false;
+  }
+
+  applyStructureChange({ type: "delete", axis: "col", index: range.firstCol, count, maxRows: ROWS, maxCols: COLS });
+  const col = Math.min(range.firstCol, COLS - 1);
+  selectCell(cellId(range.firstRow, col), { focus: true });
+  return true;
+}
+
+function applyStructureChange(change) {
+  const nextCells = {};
+
+  for (const [id, raw] of engine.rawCells.entries()) {
+    const current = parseCellId(id);
+    const next = adjustedCellPosition(current, change);
+
+    if (!next) {
+      continue;
+    }
+
+    nextCells[cellId(next.row, next.col)] = updateFormulaReferencesForStructureChange(raw, change);
+  }
+
+  engine.setCells(nextCells);
+  saveCells();
+}
+
+function adjustedCellPosition(parsed, change) {
+  if (!parsed) {
+    return null;
+  }
+
+  const row = adjustedPositionCoordinate(parsed.row, change, "row");
+  const col = adjustedPositionCoordinate(parsed.col, change, "col");
+
+  if (row === null || col === null || !isVisiblePosition(row, col)) {
+    return null;
+  }
+
+  return { row, col };
+}
+
+function adjustedPositionCoordinate(value, change, axis) {
+  if (change.axis !== axis) {
+    return value;
+  }
+
+  if (change.type === "insert") {
+    return value >= change.index ? value + change.count : value;
+  }
+
+  const deletedEnd = change.index + change.count - 1;
+  if (value >= change.index && value <= deletedEnd) {
+    return null;
+  }
+
+  return value > deletedEnd ? value - change.count : value;
 }
 
 function updateCell(id, value) {
@@ -481,9 +715,21 @@ function getCellInput(id) {
   return cellInputs.get(id) ?? null;
 }
 
+function isCellInput(element) {
+  return element?.classList?.contains("cell-input") ?? false;
+}
+
+function shouldUseGridClipboard(element) {
+  return isCellInput(element) && element.selectionStart === element.selectionEnd;
+}
+
 function isVisibleCell(id) {
   const parsed = parseCellId(id);
-  return parsed && parsed.row >= 0 && parsed.row < ROWS && parsed.col >= 0 && parsed.col < COLS;
+  return parsed && isVisiblePosition(parsed.row, parsed.col);
+}
+
+function isVisiblePosition(row, col) {
+  return row >= 0 && row < ROWS && col >= 0 && col < COLS;
 }
 
 function selectedRangeBounds() {
@@ -804,6 +1050,7 @@ function syncFileMenuState() {
   const hasSavedSheet = Boolean(savedSheetSelect.value);
   loadSheet.disabled = !hasSavedSheet;
   deleteSavedSheet.disabled = !hasSavedSheet;
+  pasteCells.disabled = !copiedCells;
 }
 
 function serializeCells() {

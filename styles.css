@@ -209,6 +209,10 @@ button.danger {
   min-width: 210px;
 }
 
+.edit-menu-list {
+  min-width: 220px;
+}
+
 .menu-list button {
   display: flex;
   align-items: center;

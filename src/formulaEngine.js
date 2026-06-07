@@ -7,6 +7,7 @@ export const ERRORS = Object.freeze({
 });
 
 const CELL_RE = /^([A-Z]+)([1-9][0-9]*)$/i;
+const CELL_TOKEN_RE = /^[A-Za-z]+[1-9][0-9]*/;
 const MAX_RANGE_CELLS = 256 * 256;
 
 class FormulaException extends Error {
@@ -123,6 +124,225 @@ export function expandRange(startId, endId) {
   }
 
   return ids;
+}
+
+export function shiftFormulaReferences(raw, rowDelta, colDelta, bounds = {}) {
+  const maxRows = bounds.maxRows ?? Infinity;
+  const maxCols = bounds.maxCols ?? Infinity;
+
+  return rewriteFormulaReferences(raw, {
+    cell: (id) => {
+      const shifted = shiftParsedCell(parseCellId(id), rowDelta, colDelta, maxRows, maxCols);
+      return shifted ? cellId(shifted.row, shifted.col) : ERRORS.REF;
+    },
+    range: (startId, endId) => {
+      const start = shiftParsedCell(parseCellId(startId), rowDelta, colDelta, maxRows, maxCols);
+      const end = shiftParsedCell(parseCellId(endId), rowDelta, colDelta, maxRows, maxCols);
+      return start && end ? rangeLabel(cellId(start.row, start.col), cellId(end.row, end.col)) : ERRORS.REF;
+    }
+  });
+}
+
+export function updateFormulaReferencesForStructureChange(raw, change) {
+  const normalizedChange = {
+    maxRows: Infinity,
+    maxCols: Infinity,
+    ...change
+  };
+
+  return rewriteFormulaReferences(raw, {
+    cell: (id) => {
+      const adjusted = adjustParsedCellForStructureChange(parseCellId(id), normalizedChange);
+      return adjusted ? cellId(adjusted.row, adjusted.col) : ERRORS.REF;
+    },
+    range: (startId, endId) => adjustRangeForStructureChange(startId, endId, normalizedChange)
+  });
+}
+
+function rewriteFormulaReferences(raw, rewriter) {
+  const value = String(raw ?? "");
+  if (!value.trim().startsWith("=")) {
+    return value;
+  }
+
+  let result = "";
+  let index = 0;
+
+  while (index < value.length) {
+    const character = value[index];
+
+    if (character === "\"") {
+      const quoted = readQuotedString(value, index);
+      result += quoted.text;
+      index = quoted.endIndex;
+      continue;
+    }
+
+    if (/[A-Za-z]/.test(character)) {
+      const firstToken = readCellToken(value, index);
+      if (firstToken) {
+        const rangeTail = readRangeTail(value, firstToken.endIndex);
+        if (rangeTail) {
+          result += rewriter.range(firstToken.id, rangeTail.id);
+          index = rangeTail.endIndex;
+          continue;
+        }
+
+        result += rewriter.cell(firstToken.id);
+        index = firstToken.endIndex;
+        continue;
+      }
+    }
+
+    result += character;
+    index += 1;
+  }
+
+  return result;
+}
+
+function readQuotedString(value, startIndex) {
+  let index = startIndex + 1;
+
+  while (index < value.length) {
+    if (value[index] === "\"") {
+      if (value[index + 1] === "\"") {
+        index += 2;
+        continue;
+      }
+
+      index += 1;
+      break;
+    }
+
+    index += 1;
+  }
+
+  return {
+    text: value.slice(startIndex, index),
+    endIndex: index
+  };
+}
+
+function readCellToken(value, startIndex) {
+  const match = value.slice(startIndex).match(CELL_TOKEN_RE);
+  if (!match) {
+    return null;
+  }
+
+  const token = match[0];
+  const parsed = parseCellId(token);
+  const nextCharacter = value[startIndex + token.length];
+
+  if (!parsed || /[A-Za-z0-9_]/.test(nextCharacter ?? "")) {
+    return null;
+  }
+
+  return {
+    id: parsed.id,
+    endIndex: startIndex + token.length
+  };
+}
+
+function readRangeTail(value, startIndex) {
+  let index = skipSpaces(value, startIndex);
+  if (value[index] !== ":") {
+    return null;
+  }
+
+  index = skipSpaces(value, index + 1);
+  return readCellToken(value, index);
+}
+
+function skipSpaces(value, startIndex) {
+  let index = startIndex;
+  while (/\s/.test(value[index] ?? "")) {
+    index += 1;
+  }
+
+  return index;
+}
+
+function shiftParsedCell(parsed, rowDelta, colDelta, maxRows, maxCols) {
+  if (!parsed) {
+    return null;
+  }
+
+  const row = parsed.row + rowDelta;
+  const col = parsed.col + colDelta;
+
+  if (row < 0 || col < 0 || row >= maxRows || col >= maxCols) {
+    return null;
+  }
+
+  return { row, col };
+}
+
+function adjustParsedCellForStructureChange(parsed, change) {
+  if (!parsed) {
+    return null;
+  }
+
+  const row = adjustCoordinateForStructureChange(parsed.row, change, "row");
+  const col = adjustCoordinateForStructureChange(parsed.col, change, "col");
+
+  if (row === null || col === null || row < 0 || col < 0 || row >= change.maxRows || col >= change.maxCols) {
+    return null;
+  }
+
+  return { row, col };
+}
+
+function adjustCoordinateForStructureChange(value, change, axis) {
+  if (change.axis !== axis) {
+    return value;
+  }
+
+  if (change.type === "insert") {
+    return value >= change.index ? value + change.count : value;
+  }
+
+  const deletedEnd = change.index + change.count - 1;
+  if (value >= change.index && value <= deletedEnd) {
+    return null;
+  }
+
+  return value > deletedEnd ? value - change.count : value;
+}
+
+function adjustRangeForStructureChange(startId, endId, change) {
+  const start = parseCellId(startId);
+  const end = parseCellId(endId);
+  if (!start || !end) {
+    return ERRORS.REF;
+  }
+
+  const firstRow = Math.min(start.row, end.row);
+  const lastRow = Math.max(start.row, end.row);
+  const firstCol = Math.min(start.col, end.col);
+  const lastCol = Math.max(start.col, end.col);
+  const rows = adjustedRangeCoordinates(firstRow, lastRow, change, "row");
+  const cols = adjustedRangeCoordinates(firstCol, lastCol, change, "col");
+
+  if (rows.length === 0 || cols.length === 0) {
+    return ERRORS.REF;
+  }
+
+  return rangeLabel(cellId(Math.min(...rows), Math.min(...cols)), cellId(Math.max(...rows), Math.max(...cols)));
+}
+
+function adjustedRangeCoordinates(first, last, change, axis) {
+  const coordinates = [];
+  const limit = axis === "row" ? change.maxRows : change.maxCols;
+
+  for (let value = first; value <= last; value += 1) {
+    const adjusted = adjustCoordinateForStructureChange(value, change, axis);
+    if (adjusted !== null && adjusted >= 0 && adjusted < limit) {
+      coordinates.push(adjusted);
+    }
+  }
+
+  return coordinates;
 }
 
 export class FormulaEngine {
@@ -248,6 +468,8 @@ function literalValue(raw) {
 
 function evaluateAst(node, context) {
   switch (node.type) {
+    case "error":
+      return errorValue(node.code);
     case "number":
       return numberValue(node.value);
     case "string":
@@ -733,6 +955,12 @@ function tokenize(input) {
       continue;
     }
 
+    if (input.slice(index, index + ERRORS.REF.length).toUpperCase() === ERRORS.REF) {
+      tokens.push({ type: "error", value: ERRORS.REF });
+      index += ERRORS.REF.length;
+      continue;
+    }
+
     if (/[A-Za-z_]/.test(character)) {
       const match = input.slice(index).match(/^[A-Za-z_][A-Za-z0-9_]*/);
       const value = match[0].toUpperCase();
@@ -827,6 +1055,10 @@ class Parser {
   }
 
   parsePrimary() {
+    if (this.match("error")) {
+      return { type: "error", code: this.previous().value };
+    }
+
     if (this.match("number")) {
       return { type: "number", value: this.previous().value };
     }

@@ -32,6 +32,21 @@
               </div>
             </details>
             <details class="menu">
+              <summary>Edit</summary>
+              <div class="menu-list edit-menu-list" role="menu">
+                <button type="button" role="menuitem" id="copyCells">Copy Cells</button>
+                <button type="button" role="menuitem" id="pasteCells">Paste Cells</button>
+                <div class="menu-separator" aria-hidden="true"></div>
+                <button type="button" role="menuitem" id="insertRowsAbove">Insert Row Above</button>
+                <button type="button" role="menuitem" id="insertRowsBelow">Insert Row Below</button>
+                <button type="button" role="menuitem" id="deleteRows" class="danger">Delete Selected Rows</button>
+                <div class="menu-separator" aria-hidden="true"></div>
+                <button type="button" role="menuitem" id="insertColumnsLeft">Insert Column Left</button>
+                <button type="button" role="menuitem" id="insertColumnsRight">Insert Column Right</button>
+                <button type="button" role="menuitem" id="deleteColumns" class="danger">Delete Selected Columns</button>
+              </div>
+            </details>
+            <details class="menu">
               <summary>Math</summary>
               <div class="menu-list" role="menu">
                 <button type="button" role="menuitem" data-insert-function="SUM" data-function-template="SUM({range})">SUM</button>
