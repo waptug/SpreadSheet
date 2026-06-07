@@ -1,6 +1,6 @@
 # Spreadsheet
 
-A static spreadsheet application with editable cells, numeric and text formulas, range functions, dependency recalculation, and local browser persistence.
+A static 256 by 256 spreadsheet application with editable cells, numeric and text formulas, range functions, dependency recalculation, and local browser persistence.
 
 ## Run
 

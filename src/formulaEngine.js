@@ -7,7 +7,7 @@ export const ERRORS = Object.freeze({
 });
 
 const CELL_RE = /^([A-Z]+)([1-9][0-9]*)$/i;
-const MAX_RANGE_CELLS = 10000;
+const MAX_RANGE_CELLS = 256 * 256;
 
 class FormulaException extends Error {
   constructor(code) {

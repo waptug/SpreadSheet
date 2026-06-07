@@ -7,8 +7,8 @@ import {
   rangeLabel
 } from "./formulaEngine.js";
 
-const ROWS = 40;
-const COLS = 16;
+const ROWS = 256;
+const COLS = 256;
 const STORAGE_KEY = "spreadsheet:v1";
 const SAVED_SHEETS_KEY = "spreadsheet:savedSheets:v1";
 const CURRENT_SHEET_NAME_KEY = "spreadsheet:currentSheetName:v1";
@@ -30,13 +30,19 @@ const loadSheet = document.querySelector("#loadSheet");
 const deleteSavedSheet = document.querySelector("#deleteSavedSheet");
 
 const engine = new FormulaEngine(loadCells());
-const gridIds = createGridIds();
-let evaluation = engine.evaluateCells(gridIds);
+const cellInputs = new Map();
+const columnHeaderButtons = [];
+const rowHeaderButtons = [];
 let selectedCell = "A1";
 let selectionStart = "A1";
 let selectionEnd = "A1";
 let isSelecting = false;
 let currentSheetName = loadCurrentSheetName();
+let evaluation = engine.evaluateCells([selectedCell]);
+let lastPaintedCellIds = new Set();
+let lastRawCellIds = new Set();
+let lastActiveColumnHeaderIndexes = new Set();
+let lastActiveRowHeaderIndexes = new Set();
 
 buildGrid();
 refreshSavedSheetSelect();
@@ -177,6 +183,9 @@ deleteSavedSheet.addEventListener("click", () => {
 });
 
 function buildGrid() {
+  cellInputs.clear();
+  columnHeaderButtons.length = 0;
+  rowHeaderButtons.length = 0;
   const thead = document.createElement("thead");
   const headerRow = document.createElement("tr");
   const corner = document.createElement("th");
@@ -191,6 +200,7 @@ function buildGrid() {
     button.className = "header-button";
     button.textContent = cellId(0, col).replace(/\d+$/, "");
     button.addEventListener("click", () => selectRange(cellId(0, col), cellId(ROWS - 1, col)));
+    columnHeaderButtons.push(button);
     header.append(button);
     headerRow.append(header);
   }
@@ -207,6 +217,7 @@ function buildGrid() {
     rowButton.className = "header-button";
     rowButton.textContent = String(row + 1);
     rowButton.addEventListener("click", () => selectRange(cellId(row, 0), cellId(row, COLS - 1)));
+    rowHeaderButtons.push(rowButton);
     rowHeader.append(rowButton);
     tableRow.append(rowHeader);
 
@@ -216,6 +227,7 @@ function buildGrid() {
       const input = document.createElement("input");
       input.className = "cell-input";
       input.dataset.cell = id;
+      cellInputs.set(id, input);
       input.autocomplete = "off";
       input.spellcheck = false;
       input.addEventListener("pointerdown", (event) => {
@@ -255,30 +267,39 @@ function updateCell(id, value) {
 }
 
 function render() {
-  evaluation = engine.evaluateCells(gridIds);
-  const selectedMeta = evaluation.cells[selectedCell];
+  evaluation = engine.evaluateCells([selectedCell]);
+  const selectedMeta = getCellMeta(selectedCell);
   const dependencies = new Set(selectedMeta?.dependencies ?? []);
   const dependents = new Set(evaluation.dependents[selectedCell] ?? []);
   const selectedRange = new Set(getSelectedRangeCells());
   const activeElement = document.activeElement;
+  const currentRawCellIds = new Set(engine.rawCells.keys());
+  const currentPaintedCellIds = new Set([
+    selectedCell,
+    ...selectedRange,
+    ...dependencies,
+    ...dependents
+  ]);
+  const cellsToPaint = new Set([
+    ...lastPaintedCellIds,
+    ...currentPaintedCellIds,
+    ...lastRawCellIds,
+    ...currentRawCellIds
+  ]);
 
-  for (const id of gridIds) {
-    const input = getCellInput(id);
-    const meta = evaluation.cells[id];
-    const isActive = activeElement === input;
-
-    if (!isActive) {
-      input.value = meta.display;
+  for (const id of cellsToPaint) {
+    if (isVisibleCell(id)) {
+      paintCell(id, {
+        activeElement,
+        dependencies,
+        dependents,
+        selectedRange
+      });
     }
-
-    input.classList.toggle("selected", id === selectedCell);
-    input.classList.toggle("range", selectedRange.has(id));
-    input.classList.toggle("dependency", dependencies.has(id));
-    input.classList.toggle("dependent", dependents.has(id));
-    input.classList.toggle("formula", meta.raw.trim().startsWith("="));
-    input.classList.toggle("error", meta.value.type === "error");
-    input.title = meta.raw.trim().startsWith("=") ? `${meta.raw} = ${meta.display}` : meta.raw;
   }
+
+  lastPaintedCellIds = currentPaintedCellIds;
+  lastRawCellIds = currentRawCellIds;
 
   addressBox.value = currentSelectionLabel();
   formulaBar.value = activeElement === formulaBar ? formulaBar.value : engine.getRaw(selectedCell);
@@ -286,7 +307,41 @@ function render() {
   statusCell.textContent = selectedCell;
   statusValue.textContent = statusText(selectedMeta);
   syncFileMenuState();
-  updateHeaderState(selectedRange);
+  updateHeaderState();
+}
+
+function paintCell(id, state) {
+  const input = getCellInput(id);
+  if (!input) {
+    return;
+  }
+
+  const meta = getCellMeta(id);
+  const isActive = state.activeElement === input;
+  const isFormula = meta.raw.trim().startsWith("=");
+
+  if (!isActive && input.value !== meta.display) {
+    input.value = meta.display;
+  }
+
+  input.classList.toggle("selected", id === selectedCell);
+  input.classList.toggle("range", state.selectedRange.has(id));
+  input.classList.toggle("dependency", state.dependencies.has(id));
+  input.classList.toggle("dependent", state.dependents.has(id));
+  input.classList.toggle("formula", isFormula);
+  input.classList.toggle("error", meta.value.type === "error");
+  input.title = isFormula ? `${meta.raw} = ${meta.display}` : meta.raw;
+}
+
+function getCellMeta(id) {
+  return (
+    evaluation.cells[id] ?? {
+      raw: engine.getRaw(id),
+      value: { type: "blank", value: null },
+      display: "",
+      dependencies: []
+    }
+  );
 }
 
 function handleCellKeydown(event, id) {
@@ -381,16 +436,33 @@ function suggestedFormulaDestination() {
   return selectedCell;
 }
 
-function updateHeaderState(selectedRange) {
-  document.querySelectorAll(".column-header .header-button").forEach((button, index) => {
-    const columnCells = Array.from({ length: ROWS }, (_, row) => cellId(row, index));
-    button.classList.toggle("active", columnCells.every((id) => selectedRange.has(id)));
-  });
+function updateHeaderState() {
+  const range = selectedRangeBounds();
+  const activeColumns = new Set();
+  const activeRows = new Set();
 
-  document.querySelectorAll(".row-header .header-button").forEach((button, index) => {
-    const rowCells = Array.from({ length: COLS }, (_, col) => cellId(index, col));
-    button.classList.toggle("active", rowCells.every((id) => selectedRange.has(id)));
-  });
+  if (range.firstRow === 0 && range.lastRow === ROWS - 1) {
+    for (let col = range.firstCol; col <= range.lastCol; col += 1) {
+      activeColumns.add(col);
+    }
+  }
+
+  if (range.firstCol === 0 && range.lastCol === COLS - 1) {
+    for (let row = range.firstRow; row <= range.lastRow; row += 1) {
+      activeRows.add(row);
+    }
+  }
+
+  for (const col of new Set([...lastActiveColumnHeaderIndexes, ...activeColumns])) {
+    columnHeaderButtons[col]?.classList.toggle("active", activeColumns.has(col));
+  }
+
+  for (const row of new Set([...lastActiveRowHeaderIndexes, ...activeRows])) {
+    rowHeaderButtons[row]?.classList.toggle("active", activeRows.has(row));
+  }
+
+  lastActiveColumnHeaderIndexes = activeColumns;
+  lastActiveRowHeaderIndexes = activeRows;
 }
 
 function statusText(meta) {
@@ -405,25 +477,25 @@ function statusText(meta) {
   return meta.raw;
 }
 
-function createGridIds() {
-  const ids = [];
-
-  for (let row = 0; row < ROWS; row += 1) {
-    for (let col = 0; col < COLS; col += 1) {
-      ids.push(cellId(row, col));
-    }
-  }
-
-  return ids;
-}
-
 function getCellInput(id) {
-  return sheet.querySelector(`[data-cell="${id}"]`);
+  return cellInputs.get(id) ?? null;
 }
 
 function isVisibleCell(id) {
   const parsed = parseCellId(id);
   return parsed && parsed.row >= 0 && parsed.row < ROWS && parsed.col >= 0 && parsed.col < COLS;
+}
+
+function selectedRangeBounds() {
+  const start = parseCellId(selectionStart);
+  const end = parseCellId(selectionEnd);
+
+  return {
+    firstRow: Math.min(start.row, end.row),
+    lastRow: Math.max(start.row, end.row),
+    firstCol: Math.min(start.col, end.col),
+    lastCol: Math.max(start.col, end.col)
+  };
 }
 
 function loadCells() {

@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ERRORS, FormulaEngine } from "../src/formulaEngine.js";
+import { ERRORS, FormulaEngine, cellId, expandRange } from "../src/formulaEngine.js";
+
+test("supports the 256 by 256 sheet boundary", () => {
+  assert.equal(cellId(255, 255), "IV256");
+  assert.equal(expandRange("A1", "IV256").length, 65536);
+});
 
 test("recalculates dependent formulas when a referenced cell changes", () => {
   const engine = new FormulaEngine({
